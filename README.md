@@ -9,7 +9,13 @@
 
 > CLI program to synchronize one-way a source folder to a replica.
 
-A program that synchronizes two folders: source and replica. The program maintains a full, identical copy of the source folder at replica folder.
+A very unoptimized, synchronous implementation of program that synchronizes two folders: source and replica.
+
+> **WARNING**
+> Use at your own risk!
+> The program deletes or overwrites all files and folders in the replica folder if they are not in the source folder or are different.
+
+The program maintains a full, identical copy of the source folder at replica folder.
 
 Synchronization is one-way: after the synchronization content of the replica folder exactly matches content of the source folder.
 
@@ -17,7 +23,7 @@ Synchronization is performed periodically.
 
 File creation/copying/removal operations are logged to a file and to the console output.
 
-Folder paths, synchronization interval and log file path should be provided using the command line arguments.
+Folder paths, synchronization interval and log file path should be provided using command line arguments.
 
 <!-- pyscaffold-notes -->
 
