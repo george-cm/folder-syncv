@@ -1,7 +1,6 @@
 # folder_syncv
 
-Add a short description here!
-
+CLI program to synchronize one-way a source folder to a replica.
 
 ## Note
 
@@ -12,7 +11,6 @@ Add a short description here!
 >
 > Please check [Sphinx] and [MyST] for more information
 > about how to document your project and how to configure your preferences.
-
 
 ## Contents
 

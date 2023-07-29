@@ -1,27 +1,25 @@
-<!-- These are examples of badges you might want to add to your README:
-     please update the URLs accordingly
+# folder_syncv
 
-[![Built Status](https://api.cirrus-ci.com/github/<USER>/folder_syncv.svg?branch=main)](https://cirrus-ci.com/github/<USER>/folder_syncv)
-[![ReadTheDocs](https://readthedocs.org/projects/folder_syncv/badge/?version=latest)](https://folder_syncv.readthedocs.io/en/stable/)
-[![Coveralls](https://img.shields.io/coveralls/github/<USER>/folder_syncv/main.svg)](https://coveralls.io/r/<USER>/folder_syncv)
-[![PyPI-Server](https://img.shields.io/pypi/v/folder_syncv.svg)](https://pypi.org/project/folder_syncv/)
-[![Conda-Forge](https://img.shields.io/conda/vn/conda-forge/folder_syncv.svg)](https://anaconda.org/conda-forge/folder_syncv)
-[![Monthly Downloads](https://pepy.tech/badge/folder_syncv/month)](https://pepy.tech/project/folder_syncv)
-[![Twitter](https://img.shields.io/twitter/url/http/shields.io.svg?style=social&label=Twitter)](https://twitter.com/folder_syncv)
--->
+[![Built Status](https://api.cirrus-ci.com/github/george-cm/folder-syncv.svg?branch=main)](https://cirrus-ci.com/github/george-cm/folder_syncv)
+[![ReadTheDocs](https://readthedocs.org/projects/folder-syncv/badge/?version=latest)](https://folder-syncv.readthedocs.io/en/stable/)
 
 [![Project generated with PyScaffold](https://img.shields.io/badge/-PyScaffold-005CA0?logo=pyscaffold)](https://pyscaffold.org/)
 
-# folder_syncv
+> CLI program to synchronize one-way a source folder to a replica.
 
-> Add a short description here!
+A program that synchronizes two folders: source and replica. The program maintains a full, identical copy of the source folder at replica folder.
 
-A longer description of your project goes here...
+Synchronization is one-way: after the synchronization content of the replica folder exactly matches content of the source folder.
 
+Synchronization is performed periodically.
+
+File creation/copying/removal operations are logged to a file and to the console output.
+
+Folder paths, synchronization interval and log file path should be provided using the command line arguments.
 
 <!-- pyscaffold-notes -->
 
 ## Note
 
 This project has been set up using PyScaffold 4.5. For details and usage
-information on PyScaffold see https://pyscaffold.org/.
+information on PyScaffold see <https://pyscaffold.org/>.
