@@ -2,7 +2,7 @@
 
 <!-- [![Built Status](https://api.cirrus-ci.com/github/george-cm/folder-syncv.svg?branch=main)](https://cirrus-ci.com/github/george-cm/folder_syncv) -->
 [![Github Actions Workflow main branch](https://github.com/george-cm/folder-syncv/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/george-cm/folder-syncv/actions/workflows/ci.yml/badge.svg?branch=main)
-[![ReadTheDocs](https://readthedocs.org/projects/folder-syncv/badge/?version=latest)](https://folder-syncv.readthedocs.io/en/stable/)
+[![ReadTheDocs](https://readthedocs.org/projects/folder-syncv/badge/?version=latest)](https://folder-syncv.readthedocs.io/en/latest/)
 [![Coverage Status](https://coveralls.io/repos/github/george-cm/folder-syncv/badge.svg?branch=main)](https://coveralls.io/github/george-cm/folder-syncv?branch=main)
 
 [![Project generated with PyScaffold](https://img.shields.io/badge/-PyScaffold-005CA0?logo=pyscaffold)](https://pyscaffold.org/)
