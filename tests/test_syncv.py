@@ -14,6 +14,9 @@ from folder_syncv.syncv import (
     is_folder_in_other_as_file,
     is_folder_in_other_as_folder,
     setup_logging,
+    sync_folder,
+    sync_replica_to_source,
+    sync_source_to_replica,
 )
 
 __author__ = "George Murga"
@@ -153,10 +156,7 @@ def test_is_folder_in_other_as_file_not_in_other(tmp_path: Path) -> None:
     destination_folder_path: Path = destination_path / "level1/level2"
     destination_folder_path.mkdir(parents=True)
 
-    assert (
-        is_folder_in_other_as_file(source_folder_path, source_path, destination_path)
-        is False
-    )
+    assert is_folder_in_other_as_file(source_folder_path, source_path, destination_path) is False
 
 
 def test_is_folder_in_other_as_file_is_in_other_as_folder(tmp_path: Path) -> None:
@@ -168,10 +168,7 @@ def test_is_folder_in_other_as_file_is_in_other_as_folder(tmp_path: Path) -> Non
     destination_folder_path: Path = destination_path / "level1/level2/level3"
     destination_folder_path.mkdir(parents=True)
 
-    assert (
-        is_folder_in_other_as_file(source_folder_path, source_path, destination_path)
-        is False
-    )
+    assert is_folder_in_other_as_file(source_folder_path, source_path, destination_path) is False
 
 
 def test_is_folder_in_other_as_file_is_in_other_as_file(tmp_path: Path) -> None:
@@ -186,10 +183,7 @@ def test_is_folder_in_other_as_file_is_in_other_as_file(tmp_path: Path) -> None:
     with destination_file_path.open("w", encoding="utf-8") as f:
         f.write("")
 
-    assert (
-        is_folder_in_other_as_file(source_folder_path, source_path, destination_path)
-        is True
-    )
+    assert is_folder_in_other_as_file(source_folder_path, source_path, destination_path) is True
 
 
 def test_is_folder_in_other_as_folder_not_in_other(tmp_path: Path) -> None:
@@ -201,10 +195,7 @@ def test_is_folder_in_other_as_folder_not_in_other(tmp_path: Path) -> None:
     destination_folder_path: Path = destination_path / "level1/level2"
     destination_folder_path.mkdir(parents=True)
 
-    assert (
-        is_folder_in_other_as_folder(source_folder_path, source_path, destination_path)
-        is False
-    )
+    assert is_folder_in_other_as_folder(source_folder_path, source_path, destination_path) is False
 
 
 def test_is_folder_in_other_as_folder_is_in_other_as_folder(tmp_path: Path) -> None:
@@ -216,10 +207,7 @@ def test_is_folder_in_other_as_folder_is_in_other_as_folder(tmp_path: Path) -> N
     destination_folder_path: Path = destination_path / "level1/level2/level3"
     destination_folder_path.mkdir(parents=True)
 
-    assert (
-        is_folder_in_other_as_folder(source_folder_path, source_path, destination_path)
-        is True
-    )
+    assert is_folder_in_other_as_folder(source_folder_path, source_path, destination_path) is True
 
 
 def test_is_folder_in_other_as_folder_is_in_other_as_file(tmp_path: Path) -> None:
@@ -234,7 +222,169 @@ def test_is_folder_in_other_as_folder_is_in_other_as_file(tmp_path: Path) -> Non
     with destination_file_path.open("w", encoding="utf-8") as f:
         f.write("")
 
-    assert (
-        is_folder_in_other_as_folder(source_folder_path, source_path, destination_path)
-        is False
-    )
+    assert is_folder_in_other_as_folder(source_folder_path, source_path, destination_path) is False
+
+
+def test_sync_source_to_replica_empty_replica(tmp_path: Path) -> None:
+    source: Path = tmp_path / "source"
+    l1: Path = source / "l1/l11/l111"
+    l1.mkdir(parents=True)
+    (l1 / "file111.txt").touch()
+    (l1.parent / "file11.txt").touch()
+    (l1.parent.parent / "file1.txt").touch()
+    l2: Path = source / "l2/l22"
+    l2.mkdir(parents=True)
+    (l2 / "file22.txt").touch()
+    (l2.parent / "file2.txt").touch()
+    l3: Path = source / "l3"
+    l3.mkdir(parents=True)
+    (l3 / "file3.txt").touch()
+    (source / "file0.txt").touch()
+
+    destination: Path = tmp_path / "destination"
+    destination.mkdir(parents=True)
+
+    files_count, folders_count, files_copied, folders_copied = sync_source_to_replica(source, destination)
+    assert files_count == 1
+    assert folders_count == 3
+    assert files_copied == 1
+    source_files_and_folders: set[str] = set(x.as_posix().replace(source.as_posix(), "") for x in source.iterdir())
+    destination_files_and_folders: set[str] = set(x.as_posix().replace(destination.as_posix(), "") for x in destination.iterdir())
+    assert source_files_and_folders == destination_files_and_folders
+
+
+def test_sync_source_to_replica_nonempty_replica(tmp_path: Path) -> None:
+    source: Path = tmp_path / "source"
+    l1: Path = source / "l1/l11/l111"
+    l1.mkdir(parents=True)
+    (l1 / "file111.txt").touch()
+    (l1.parent / "file11.txt").touch()
+    (l1.parent.parent / "file1.txt").touch()
+    l2: Path = source / "l2/l22"
+    l2.mkdir(parents=True)
+    (l2 / "file22.txt").touch()
+    (l2.parent / "file2.txt").touch()
+    l3: Path = source / "l3"
+    l3.mkdir(parents=True)
+    (l3 / "file3.txt").touch()
+    (source / "file0.txt").touch()
+
+    destination: Path = tmp_path / "destination"
+    destination.mkdir(parents=True)
+    d1: Path = destination / "d1"
+    d1.mkdir(parents=True)
+    dl1: Path = destination / "l1"
+    dl1.mkdir(parents=True)
+    (d1 / "d1_file.txt").touch()
+    (destination / "d_file.txt").touch()
+    (destination / l3).touch()
+
+    print("source")
+    for e in source.rglob("*"):
+        print(e.as_posix())
+    print("destination")
+    for e in destination.rglob("*"):
+        print(e.as_posix())
+
+    files_count, folders_count, files_copied, folders_copied = sync_source_to_replica(source, destination)
+    assert files_count == 2
+    assert folders_count == 4
+    assert files_copied == 2
+    source_files_and_folders: set[str] = set(x.as_posix().replace(source.as_posix(), "") for x in source.rglob("*"))
+    destination_files_and_folders: set[str] = set(x.as_posix().replace(destination.as_posix(), "") for x in destination.rglob("*"))
+
+    print(f"{source_files_and_folders=}")
+    print(f"{destination_files_and_folders=}")
+    print(f"{destination_files_and_folders - source_files_and_folders=}")
+    assert destination_files_and_folders - source_files_and_folders == {
+        "/d1",
+        "/d1/d1_file.txt",
+        "/d_file.txt",
+    }
+
+
+def test_sync_replica_to_source_empty_replica(tmp_path: Path) -> None:
+    source: Path = tmp_path / "source"
+    l1: Path = source / "l1/l11/l111"
+    l1.mkdir(parents=True)
+    (l1 / "file111.txt").touch()
+    (l1.parent / "file11.txt").touch()
+    (l1.parent.parent / "file1.txt").touch()
+    l2: Path = source / "l2/l22"
+    l2.mkdir(parents=True)
+    (l2 / "file22.txt").touch()
+    (l2.parent / "file2.txt").touch()
+    l3: Path = source / "l3"
+    l3.mkdir(parents=True)
+    (l3 / "file3.txt").touch()
+    (source / "file0.txt").touch()
+
+    destination: Path = tmp_path / "destination"
+    destination.mkdir(parents=True)
+    d1: Path = destination / "d1"
+    d1.mkdir(parents=True)
+    dl1: Path = destination / "l1"
+    dl1.mkdir(parents=True)
+    (d1 / "d1_file.txt").touch()
+    (destination / "d_file.txt").touch()
+    (destination / l3).touch()
+
+    print("source")
+    for e in source.rglob("*"):
+        print(e.as_posix())
+    print("destination")
+    for e in destination.rglob("*"):
+        print(e.as_posix())
+
+    files_deleted, folders_deleted = sync_replica_to_source(source, destination)
+    assert files_deleted == 1
+    assert folders_deleted == 1
+    # source_files_and_folders: set[str] = set(x.as_posix().replace(source.as_posix(), "") for x in source.rglob("*"))
+    destination_files_and_folders: set[str] = set(x.as_posix().replace(destination.as_posix(), "") for x in destination.rglob("*"))
+
+    print(f"{destination_files_and_folders=}")
+    assert destination_files_and_folders == {"/l1"}
+
+
+def test_sync_folder(tmp_path: Path) -> None:
+    source: Path = tmp_path / "source"
+    l1: Path = source / "l1/l11/l111"
+    l1.mkdir(parents=True)
+    (l1 / "file111.txt").touch()
+    (l1.parent / "file11.txt").touch()
+    (l1.parent.parent / "file1.txt").touch()
+    l2: Path = source / "l2/l22"
+    l2.mkdir(parents=True)
+    (l2 / "file22.txt").touch()
+    (l2.parent / "file2.txt").touch()
+    l3: Path = source / "l3"
+    l3.mkdir(parents=True)
+    (l3 / "file3.txt").touch()
+    (source / "file0.txt").touch()
+
+    destination: Path = tmp_path / "destination"
+    destination.mkdir(parents=True)
+    d1: Path = destination / "d1"
+    d1.mkdir(parents=True)
+    dl1: Path = destination / "l1"
+    dl1.mkdir(parents=True)
+    (d1 / "d1_file.txt").touch()
+    (destination / "d_file.txt").touch()
+    (destination / l3).touch()
+
+    print("source")
+    for e in source.rglob("*"):
+        print(e.as_posix())
+    print("destination")
+    for e in destination.rglob("*"):
+        print(e.as_posix())
+
+    sync_folder(source, destination, 0, tmp_path / "tmp.log", "debug")
+
+    source_files_and_folders: set[str] = set(x.as_posix().replace(source.as_posix(), "") for x in source.rglob("*"))
+    destination_files_and_folders: set[str] = set(x.as_posix().replace(destination.as_posix(), "") for x in destination.rglob("*"))
+
+    print(f"{source_files_and_folders=}")
+    print(f"{destination_files_and_folders=}")
+    print(f"{destination_files_and_folders - source_files_and_folders=}")
+    assert destination_files_and_folders == source_files_and_folders

@@ -6,7 +6,9 @@ import logging
 from collections import deque
 from hashlib import md5
 from pathlib import Path
-from shutil import copy2, copytree
+from shutil import copy2, copytree, rmtree
+from time import sleep
+from timeit import default_timer
 from typing import Literal, TypeAlias
 
 import click
@@ -21,46 +23,81 @@ _logger: logging.Logger = logging.getLogger(__name__)
 LOGLEVEL: TypeAlias = Literal["debug", "info", "warn", "error", "critical"]
 
 
-def sync_folder(
-    source: Path, replica: Path, syncinterval: int, logfile: Path, loglevel: LOGLEVEL
-) -> None:
-    """Synchronizes SOURCE folder to REPLICA folder."""
+def sync_folder(source: Path, replica: Path, syncinterval: int, logfile: Path, loglevel: LOGLEVEL) -> None:
+    """Synchronizes SOURCE folder to REPLICA folder.
 
+    Args:
+        source (pathlib.Path): path of the source folder
+        replica (pathlib.Path): path of the target folder
+        syncinterval (int): period with which to repeat the sync in seconds
+        logfile (pathlib.Path): path of the logfile
+        loglevel (LOGLEVEL): level of the log
+
+    Returns:
+        None
+    """
     source = Path(source).resolve()
     replica = Path(replica).resolve()
     logfile = Path(logfile).resolve()
-
+    sync_count: int = 1
     setup_logging(loglevel, logfile=logfile)
 
     validate_source(source)
     validate_replica(replica)
 
-    _logger.info(
-        "Starting sync every %s seconds. SOURCE: %s -> REPLICA: %s"
-        % (syncinterval, source.resolve(), replica.resolve())
-    )
-    files_count: int = 0
-    folders_count: int = 0
-    files_count, folders_count, files_copied, folders_copied = sync_source_to_replica(
-        source, replica
-    )
-    _logger.info(
-        "processed: total files = %d, total folders = %d, files copied = %d, folders_copied = %d"
-        % (files_count, folders_count, files_copied, folders_copied)
-    )
-    sync_replica_to_source(source, replica)
+    _logger.info("Starting sync every %s seconds. SOURCE: %s -> REPLICA: %s" % (syncinterval, source.resolve(), replica.resolve()))
+    try:
+        while True:
+            _logger.info("Syncing round %d (every %d seconds)" % (sync_count, syncinterval))
 
-    _logger.info("Sync stopped")
+            start_time: float = default_timer()
+
+            files_count: int = 0
+            folders_count: int = 0
+            files_copied: int = 0
+            folders_copied: int = 0
+            files_deleted: int = 0
+            folders_deleted: int = 0
+            files_count, folders_count, files_copied, folders_copied = sync_source_to_replica(source, replica)
+            files_deleted, folders_deleted = sync_replica_to_source(source, replica)
+            _logger.info(
+                "processed: total files = %d, total folders = %d, files copied = %d, folders_copied = %d, files_deleted = %d, folders_deleted = %d"
+                % (files_count, folders_count, files_copied, folders_copied, files_deleted, folders_deleted)
+            )
+            if syncinterval == 0:
+                break
+            end_time: float = default_timer()
+            _logger.info("Waiting for next sync round...")
+            while True:
+                if end_time - start_time < syncinterval:
+                    sleep(1)
+                    end_time = default_timer()
+                else:
+                    break
+            sync_count += 1
+    except KeyboardInterrupt:
+        _logger.warn("Sync interrupted by keyboard")
+    finally:
+        _logger.info("Syncing stopped.")
 
 
 def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, int]:
-    # traverse all contents of source, process files, add folders to a deque
-    # continue to process the folders in the deque untill it's emtpy
+    """Sync source contents to replica.
+    Args:
+        source (pathlib.Path): path of the source folder
+        replica (pathlib.Path): path of the target folder
+    Returns:
+        Tuple[int, int, int, int]:
+            files_count - how many files were processed,
+            folders_count - how many folders were processed,
+            files_copied - how many files were copied to the replica,
+            folders_copied - how many folders were copied to the replica.
+    """
+    _logging: logging.Logger = logging.getLogger(__name__)
     files_count: int = 0
     folders_count: int = 0
     files_copied: int = 0
     folders_copied: int = 0
-    _logging: logging.Logger = logging.getLogger(__name__)
     folder_queue: deque = deque()
     folder_queue.append(source)
     _logging.debug("added source folder to queue: %s" % source.as_posix())
@@ -74,16 +111,10 @@ def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, 
                     replica_file: Path = Path(
                         copy2(
                             el,
-                            replica
-                            / (
-                                el.as_posix().replace(source.as_posix(), "").lstrip("/")
-                            ),
+                            replica / (el.as_posix().replace(source.as_posix(), "").lstrip("/")),
                         )
                     )
-                    _logging.info(
-                        "copied file %s to %s"
-                        % (el.as_posix(), replica_file.as_posix())
-                    )
+                    _logging.info("copied file %s to %s" % (el.as_posix(), replica_file.as_posix()))
                     files_copied += 1
             elif el.is_dir():
                 folders_count += 1
@@ -95,30 +126,54 @@ def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, 
                         replica_file = Path(
                             copy2(
                                 el,
-                                replica
-                                / (
-                                    el.as_posix()
-                                    .replace(source.as_posix(), "")
-                                    .lstrip("/")
-                                ),
+                                replica / (el.as_posix().replace(source.as_posix(), "").lstrip("/")),
                             )
                         )
                         replica_file.unlink()
                         _logging.info("deleted file %s" % replica_file.as_posix())
-                    destination_folder = Path(
-                        el.as_posix().replace(source.as_posix(), replica.as_posix())
-                    )
+                    destination_folder = Path(el.as_posix().replace(source.as_posix(), replica.as_posix()))
                     replica_folder = Path(copytree(el, destination_folder))
-                    _logging.info(
-                        "copied whole folder to replica %s" % replica_folder.as_posix()
-                    )
+                    _logging.info("copied whole folder to replica %s" % replica_folder.as_posix())
                     folders_copied += 1
     return files_count, folders_count, files_copied, folders_copied
 
 
-def is_folder_in_other_as_folder(
-    folder_to_check: Path, source: Path, destination: Path
-) -> bool:
+def sync_replica_to_source(source: Path, replica: Path) -> tuple[int, int]:
+    """Remove files and folders from replica which are not in source.
+    Args:
+        source (pathlib.Path): path of the source folder
+        replica (pathlib.Path): path of the target folder
+    Returns:
+        Tuple[int, int, int, int]:
+            files_deleted - how many files were deleted,
+            folders_deleted - how many folders were deleted,
+    """
+    _logging: logging.Logger = logging.getLogger(__name__)
+    files_deleted: int = 0
+    folders_deleted: int = 0
+    folder_queue: deque = deque()
+    folder_queue.append(replica)
+    _logging.debug("added replica to folder queue: %s" % replica.as_posix())
+    while len(folder_queue) > 0:
+        current_folder: Path = folder_queue.popleft()
+        for el in current_folder.glob("*"):
+            if el.is_file():
+                _logging.debug("processing file: %s" % el.as_posix())
+                if not is_file_in_other(el, replica, source):
+                    el.unlink()
+                    _logger.info("deleted file from replica: %s" % el.as_posix())
+                    files_deleted += 1
+            elif el.is_dir():
+                if is_folder_in_other_as_folder(el, replica, source):
+                    pass
+                else:
+                    rmtree(el)
+                    _logger.info("deleted folder from replica: %s" % el.as_posix())
+                    folders_deleted += 1
+    return files_deleted, folders_deleted
+
+
+def is_folder_in_other_as_folder(folder_to_check: Path, source: Path, destination: Path) -> bool:
     """Return true if the folder_to_check path is in destination and is a folder.
 
     Args:
@@ -129,9 +184,7 @@ def is_folder_in_other_as_folder(
     Returns:
         bool: True if the folder searched is in the destination folder and is a file. False otherwise.
     """
-    glob_str: str = (
-        folder_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
-    )
+    glob_str: str = folder_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
     potential_matches = list(destination.glob(glob_str))
     if len(potential_matches) > 0:
         match_folder: Path = potential_matches[0]
@@ -140,9 +193,7 @@ def is_folder_in_other_as_folder(
     return False
 
 
-def is_folder_in_other_as_file(
-    folder_to_check: Path, source: Path, destination: Path
-) -> bool:
+def is_folder_in_other_as_file(folder_to_check: Path, source: Path, destination: Path) -> bool:
     """Return true if the folder_to_check path is in destination but it's a file not a folder.
 
     Args:
@@ -153,9 +204,7 @@ def is_folder_in_other_as_file(
     Returns:
         bool: True if the folder searched is in the destination folder but it's a file. False otherwise.
     """
-    glob_str: str = (
-        folder_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
-    )
+    glob_str: str = folder_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
     potential_matches = list(destination.glob(glob_str))
     if len(potential_matches) > 0:
         match_folder: Path = potential_matches[0]
@@ -204,10 +253,6 @@ def compute_hash(file_to_check: Path) -> str:
     return hash.hexdigest()
 
 
-def sync_replica_to_source(source: Path, replica: Path) -> None:
-    ...
-
-
 def validate_source(path: Path) -> bool:
     """Validate source folder
 
@@ -252,10 +297,7 @@ def validate_replica(path: Path) -> bool:
         try:
             path.mkdir(parents=True)
         except PermissionError:
-            _logger.error(
-                "Permission denied trying to create REPLICA folder: %s"
-                % path.as_posix()
-            )
+            _logger.error("Permission denied trying to create REPLICA folder: %s" % path.as_posix())
             raise SystemExit()
     if not path.is_dir():
         _logger.error("REPLICA: %s is not a folder" % path.as_posix())
@@ -290,7 +332,7 @@ def setup_logging(loglevel: LOGLEVEL, logfile: str | Path) -> None:
     fh.setFormatter(formatter)
 
     # setup console logging
-    ch = logging.StreamHandler()
+    ch = logging.StreamHandler()  # type: ignore
     ch.setLevel(loglevels[loglevel])
     ch.setFormatter(formatter)
 
@@ -304,18 +346,16 @@ def setup_logging(loglevel: LOGLEVEL, logfile: str | Path) -> None:
 @click.option(
     "--syncinterval",
     type=click.IntRange(min=0, max=2_678_400),
-    help="seconds bettwen synchronizations.\n0 - sync continuously\nmax = 2678400 (31 days)",
+    help="Seconds bettwen synchronizations.\nmin = 0 (sync only once), \nmax = 2678400 (31 days). Default = 0",
     required=True,
+    default=0,
 )
-@click.option(
-    "--logfile", type=click.Path(path_type=Path), help="path to log file", required=True
-)
+@click.option("--logfile", type=click.Path(path_type=Path), help="path to log file", required=True)
 @click.option(
     "--loglevel",
-    type=click.Choice(
-        ["debug", "info", "warn", "error", "critical"], case_sensitive=False
-    ),
+    type=click.Choice(["debug", "info", "warn", "error", "critical"], case_sensitive=False),
     default="info",
+    help="Default = info",
 )
 @click.version_option()
 @click.help_option("-h", "--help")

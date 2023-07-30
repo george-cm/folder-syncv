@@ -29,9 +29,9 @@ sys.path.insert(0, os.path.join(__location__, "../src"))
 # Additionally it helps us to avoid running apidoc manually
 
 try:  # for Sphinx >= 1.7
-    from sphinx.ext import apidoc
+    from sphinx.ext import apidoc  # type: ignore
 except ImportError:
-    from sphinx import apidoc
+    from sphinx import apidoc  # type: ignore
 
 output_dir = os.path.join(__location__, "api")
 module_dir = os.path.join(__location__, "../src/folder_syncv")
@@ -41,7 +41,7 @@ except FileNotFoundError:
     pass
 
 try:
-    import sphinx
+    import sphinx  # type: ignore
 
     cmd_line = f"sphinx-apidoc --implicit-namespaces -f -o {output_dir} {module_dir}"
 
@@ -176,10 +176,7 @@ html_theme = "alabaster"
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
-html_theme_options = {
-    "sidebar_width": "300px",
-    "page_width": "1200px"
-}
+html_theme_options = {"sidebar_width": "300px", "page_width": "1200px"}
 
 # Add any paths that contain custom themes here, relative to this directory.
 # html_theme_path = []
@@ -252,7 +249,7 @@ htmlhelp_basename = "folder_syncv-doc"
 
 # -- Options for LaTeX output ------------------------------------------------
 
-latex_elements = {
+latex_elements = {  # type: ignore
     # The paper size ("letterpaper" or "a4paper").
     # "papersize": "letterpaper",
     # The font size ("10pt", "11pt" or "12pt").
@@ -263,9 +260,7 @@ latex_elements = {
 
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
-latex_documents = [
-    ("index", "user_guide.tex", "folder_syncv Documentation", "George Murga", "manual")
-]
+latex_documents = [("index", "user_guide.tex", "folder_syncv Documentation", "George Murga", "manual")]
 
 # The name of an image file (relative to this directory) to place at the top of
 # the title page.
@@ -286,6 +281,8 @@ latex_documents = [
 
 # If false, no module index is generated.
 # latex_domain_indices = True
+
+# maximum_signature_line_length = 88
 
 # -- External mapping --------------------------------------------------------
 python_version = ".".join(map(str, sys.version_info[0:2]))
