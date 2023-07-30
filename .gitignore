@@ -1,3 +1,6 @@
+# Project specific
+sample_folder
+
 # Temporary and binary files
 *~
 *.py[cod]

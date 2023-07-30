@@ -3,7 +3,10 @@ Provides functions to sync folder to replica.
 """
 
 import logging
+from collections import deque
+from hashlib import md5
 from pathlib import Path
+from shutil import copy2, copytree
 from typing import Literal, TypeAlias
 
 import click
@@ -18,11 +21,198 @@ _logger: logging.Logger = logging.getLogger(__name__)
 LOGLEVEL: TypeAlias = Literal["debug", "info", "warn", "error", "critical"]
 
 
+def sync_folder(
+    source: Path, replica: Path, syncinterval: int, logfile: Path, loglevel: LOGLEVEL
+) -> None:
+    """Synchronizes SOURCE folder to REPLICA folder."""
+
+    source = Path(source).resolve()
+    replica = Path(replica).resolve()
+    logfile = Path(logfile).resolve()
+
+    setup_logging(loglevel, logfile=logfile)
+
+    validate_source(source)
+    validate_replica(replica)
+
+    _logger.info(
+        "Starting sync every %s seconds. SOURCE: %s -> REPLICA: %s"
+        % (syncinterval, source.resolve(), replica.resolve())
+    )
+    files_count: int = 0
+    folders_count: int = 0
+    files_count, folders_count, files_copied, folders_copied = sync_source_to_replica(
+        source, replica
+    )
+    _logger.info(
+        "processed: total files = %d, total folders = %d, files copied = %d, folders_copied = %d"
+        % (files_count, folders_count, files_copied, folders_copied)
+    )
+    sync_replica_to_source(source, replica)
+
+    _logger.info("Sync stopped")
+
+
+def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, int]:
+    # traverse all contents of source, process files, add folders to a deque
+    # continue to process the folders in the deque untill it's emtpy
+    files_count: int = 0
+    folders_count: int = 0
+    files_copied: int = 0
+    folders_copied: int = 0
+    _logging: logging.Logger = logging.getLogger(__name__)
+    folder_queue: deque = deque()
+    folder_queue.append(source)
+    _logging.debug("added source folder to queue: %s" % source.as_posix())
+    while len(folder_queue) > 0:
+        current_folder: Path = folder_queue.popleft()
+        for el in current_folder.glob("*"):
+            if el.is_file():
+                _logging.debug("processing file: %s" % el.as_posix())
+                files_count += 1
+                if not is_file_in_other(el, source, replica):
+                    replica_file: Path = Path(
+                        copy2(
+                            el,
+                            replica
+                            / (
+                                el.as_posix().replace(source.as_posix(), "").lstrip("/")
+                            ),
+                        )
+                    )
+                    _logging.info(
+                        "copied file %s to %s"
+                        % (el.as_posix(), replica_file.as_posix())
+                    )
+                    files_copied += 1
+            elif el.is_dir():
+                folders_count += 1
+                if is_folder_in_other_as_folder(el, source, replica):
+                    folder_queue.append(el)
+                    _logging.debug("added to queue: %s" % el.as_posix())
+                else:
+                    if is_folder_in_other_as_file(el, source, replica):
+                        replica_file = Path(
+                            copy2(
+                                el,
+                                replica
+                                / (
+                                    el.as_posix()
+                                    .replace(source.as_posix(), "")
+                                    .lstrip("/")
+                                ),
+                            )
+                        )
+                        replica_file.unlink()
+                        _logging.info("deleted file %s" % replica_file.as_posix())
+                    destination_folder = Path(
+                        el.as_posix().replace(source.as_posix(), replica.as_posix())
+                    )
+                    replica_folder = Path(copytree(el, destination_folder))
+                    _logging.info(
+                        "copied whole folder to replica %s" % replica_folder.as_posix()
+                    )
+                    folders_copied += 1
+    return files_count, folders_count, files_copied, folders_copied
+
+
+def is_folder_in_other_as_folder(
+    folder_to_check: Path, source: Path, destination: Path
+) -> bool:
+    """Return true if the folder_to_check path is in destination and is a folder.
+
+    Args:
+        folder_to_check (pathlib.Path): the folder to search for in destination (relative path must match)
+        source (pathlib.Path): path of the soruce folder
+        destination (pathlib.Path): path of the destination
+
+    Returns:
+        bool: True if the folder searched is in the destination folder and is a file. False otherwise.
+    """
+    glob_str: str = (
+        folder_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
+    )
+    potential_matches = list(destination.glob(glob_str))
+    if len(potential_matches) > 0:
+        match_folder: Path = potential_matches[0]
+        if match_folder.is_dir():
+            return True
+    return False
+
+
+def is_folder_in_other_as_file(
+    folder_to_check: Path, source: Path, destination: Path
+) -> bool:
+    """Return true if the folder_to_check path is in destination but it's a file not a folder.
+
+    Args:
+        folder_to_check (pathlib.Path): the folder to search for in destination (relative path must match)
+        source (pathlib.Path): path of the soruce folder
+        destination (pathlib.Path): path of the destination
+
+    Returns:
+        bool: True if the folder searched is in the destination folder but it's a file. False otherwise.
+    """
+    glob_str: str = (
+        folder_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
+    )
+    potential_matches = list(destination.glob(glob_str))
+    if len(potential_matches) > 0:
+        match_folder: Path = potential_matches[0]
+        if match_folder.is_file():
+            return True
+    return False
+
+
+def is_file_in_other(file_to_check: Path, source: Path, destination: Path) -> bool:
+    """Check if file_to_check is in destination folder and it's the same file.
+    Given there is a file with the same name in the destination folder (same relative path)
+    assume if modification times are the same the files are the same.
+    If the modifications time are different compare the files' content using md5.
+
+    Args:
+        file_to_check (pathlib.Path): path of the file to check from the source folder
+        source (pathlib.Path): path of the source folder
+        destination (pathlib.Path): path of the destination folder
+
+    Returns:
+        bool: True of the file in found in the destination at the same relative path and either
+        the modification times are the same or the md5 hash of the contents are the same. False otherwise
+    """
+    glob_str: str = file_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
+    potential_matches = list(destination.glob(glob_str))
+    if len(potential_matches) > 0:
+        match_file: Path = potential_matches[0]
+        destination_mdate: float = match_file.stat().st_mtime
+        source_mdate: float = file_to_check.stat().st_mtime
+        if source_mdate == destination_mdate:
+            return True
+        source_hash: str = compute_hash(file_to_check)
+        destination_hash: str = compute_hash(match_file)
+        if source_hash == destination_hash:
+            return True
+    return False
+
+
+def compute_hash(file_to_check: Path) -> str:
+    hash = md5()
+    with file_to_check.open("rb") as f:
+        chunk: bytes = f.read(4096)
+        while chunk:
+            hash.update(chunk)
+            chunk = f.read(4096)
+    return hash.hexdigest()
+
+
+def sync_replica_to_source(source: Path, replica: Path) -> None:
+    ...
+
+
 def validate_source(path: Path) -> bool:
     """Validate source folder
 
     Args:
-        path (Path): source folder path
+        path (pathlib.Path): source folder path
 
     Returns:
         bool: True if path exists and is a folder
@@ -48,7 +238,7 @@ def validate_replica(path: Path) -> bool:
     If it can't create it raise PermissionError
 
     Args:
-        path (Path): replica folder path
+        path (pathlib.Path): replica folder path
 
     Returns:
         bool: True if path exists and is a folder or if it doesn't exist but it created it successfuelly.
@@ -125,7 +315,7 @@ def setup_logging(loglevel: LOGLEVEL, logfile: str | Path) -> None:
     type=click.Choice(
         ["debug", "info", "warn", "error", "critical"], case_sensitive=False
     ),
-    default="debug",
+    default="info",
 )
 @click.version_option()
 @click.help_option("-h", "--help")
@@ -137,22 +327,9 @@ def main(
     loglevel: LOGLEVEL,
     # loglevel: Literal["debug", "info", "warn", "error", "critical"],
 ) -> None:
-    """Synchronizes SOURCE folder to REPLICA folder."""
+    """Main entrypoint"""
 
-    source = Path(source).resolve()
-    replica = Path(replica).resolve()
-    logfile = Path(logfile).resolve()
-
-    setup_logging(loglevel, logfile=logfile)
-
-    validate_source(source)
-    validate_replica(replica)
-
-    _logger.info(
-        "Starting sync every %s seconds. SOURCE: %s -> REPLICA: %s"
-        % (syncinterval, source.resolve(), replica.resolve())
-    )
-    _logger.info("Sync stopped")
+    sync_folder(source, replica, syncinterval, logfile, loglevel)
 
 
 if __name__ == "__main__":
