@@ -10,7 +10,7 @@
 
 > CLI program to synchronize one-way a source folder to a replica.
 
-A very unoptimized, synchronous implementation of program that synchronizes two folders: source and replica.
+A very unoptimized, synchronous implementation of a program that synchronizes two folders: source and replica.
 
 > **WARNING**
 >
@@ -61,6 +61,14 @@ Options:
   -h, --help                      Show this message and exit.
 ```
 
+## Documentation
+
+You can read the docs here: [folder-syncv.readthedocs.io][def2]
+
+## Sourcecode
+
+You can checkout the code on github: [github.com/george-cm/folder-syncv][def3]
+
 <!-- pyscaffold-notes -->
 
 ## Note
@@ -68,4 +76,6 @@ Options:
 This project has been set up using PyScaffold 4.5. For details and usage
 information on PyScaffold see <https://pyscaffold.org/>.
 
+[def2]: https://folder-syncv.readthedocs.io/ "folder-syncv.readthedocs.io"
 [def]: https://realpython.com/python-virtual-environments-a-primer/ "Python Virtual Environments: A Primer"
+[def3]: https://github.com/george-cm/folder-syncv "github.com/george-cm/folder-syncv"
