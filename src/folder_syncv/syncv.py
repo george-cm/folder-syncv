@@ -55,14 +55,21 @@ def sync_folder(source: Path, replica: Path, syncinterval: int, logfile: Path, l
             files_count: int = 0
             folders_count: int = 0
             files_copied: int = 0
+            files_updated: int = 0
             folders_copied: int = 0
             files_deleted: int = 0
             folders_deleted: int = 0
-            files_count, folders_count, files_copied, folders_copied = sync_source_to_replica(source, replica)
-            files_deleted, folders_deleted = sync_replica_to_source(source, replica)
+            folders_deleted1: int = 0
+            folders_deleted2: int = 0
+            files_count, folders_count, files_copied, files_updated, folders_copied, folders_deleted1 = sync_source_to_replica(
+                source, replica
+            )
+            files_deleted, folders_deleted2 = sync_replica_to_source(source, replica)
+            folders_deleted = folders_deleted1 + folders_deleted2
             _logger.info(
-                "processed: total files = %d, total folders = %d, files copied = %d, folders_copied = %d, files_deleted = %d, folders_deleted = %d"
-                % (files_count, folders_count, files_copied, folders_copied, files_deleted, folders_deleted)
+                "processed: total files = %d, total folders = %d, files copied = %d, files_updated = %d, folders_copied = %d, "
+                "files_deleted = %d, folders_deleted = %d"
+                % (files_count, folders_count, files_copied, files_updated, folders_copied, files_deleted, folders_deleted)
             )
             if syncinterval == 0:
                 break
@@ -77,11 +84,17 @@ def sync_folder(source: Path, replica: Path, syncinterval: int, logfile: Path, l
             sync_count += 1
     except KeyboardInterrupt:
         _logger.warn("Sync interrupted by keyboard")
+    except FileNotFoundError as e:
+        _logger.exception(e, exc_info=True)
+    except ExpectedFileIsAFolder as e:
+        _logger.exception(e, exc_info=True)
+    except PermissionError as e:
+        _logger.exception(e, exc_info=True)
     finally:
         _logger.info("Syncing stopped.")
 
 
-def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, int]:
+def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, int, int, int]:
     """Sync source contents to replica.
     Args:
         source (pathlib.Path): path of the source folder
@@ -97,7 +110,9 @@ def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, 
     files_count: int = 0
     folders_count: int = 0
     files_copied: int = 0
+    files_updated: int = 0
     folders_copied: int = 0
+    folders_deleted: int = 0
     folder_queue: deque = deque()
     folder_queue.append(source)
     _logging.debug("added source folder to queue: %s" % source.as_posix())
@@ -107,8 +122,23 @@ def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, 
             if el.is_file():
                 _logging.debug("processing file: %s" % el.as_posix())
                 files_count += 1
-                if not is_file_in_other(el, source, replica):
-                    replica_file: Path = Path(
+                if is_file_in_other_as_folder(el, source, replica):
+                    replica_folder: Path = replica / (el.as_posix().replace(source.as_posix(), "").lstrip("/"))
+                    replica_folder.rmdir()
+                    _logging.info("deleted folder %s" % replica_folder.as_posix())
+                    folders_deleted += 1
+                if is_file_in_other(el, source, replica):
+                    if is_file_in_other_modified(el, source, replica):
+                        replica_file: Path = Path(
+                            copy2(
+                                el,
+                                replica / (el.as_posix().replace(source.as_posix(), "").lstrip("/")),
+                            )
+                        )
+                        _logging.info("updated file %s to %s" % (el.as_posix(), replica_file.as_posix()))
+                        files_updated += 1
+                else:
+                    replica_file = Path(
                         copy2(
                             el,
                             replica / (el.as_posix().replace(source.as_posix(), "").lstrip("/")),
@@ -135,7 +165,7 @@ def sync_source_to_replica(source: Path, replica: Path) -> tuple[int, int, int, 
                     replica_folder = Path(copytree(el, destination_folder))
                     _logging.info("copied whole folder to replica %s" % replica_folder.as_posix())
                     folders_copied += 1
-    return files_count, folders_count, files_copied, folders_copied
+    return files_count, folders_count, files_copied, files_updated, folders_copied, folders_deleted
 
 
 def sync_replica_to_source(source: Path, replica: Path) -> tuple[int, int]:
@@ -213,7 +243,55 @@ def is_folder_in_other_as_file(folder_to_check: Path, source: Path, destination:
     return False
 
 
+def is_file_in_other_as_folder(file_to_check: Path, source: Path, destination: Path) -> bool:
+    """Check if file_to_check is in destination folder but it's a folder.
+
+    Args:
+        file_to_check (pathlib.Path): path of the file to check from the source folder
+        source (pathlib.Path): path of the source folder
+        destination (pathlib.Path): path of the destination folder
+
+    Returns:
+        bool: True if the file is found in the destination and is a folder. False otherwise
+    """
+    glob_str: str = file_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
+    potential_matches = list(destination.glob(glob_str))
+    if len(potential_matches) > 0:
+        match_file: Path = potential_matches[0]
+        if match_file.is_dir():
+            return True
+    return False
+
+
 def is_file_in_other(file_to_check: Path, source: Path, destination: Path) -> bool:
+    """Check if file_to_check is in destination folder.
+
+    Args:
+        file_to_check (pathlib.Path): path of the file to check from the source folder
+        source (pathlib.Path): path of the source folder
+        destination (pathlib.Path): path of the destination folder
+
+    Returns:
+        bool: True if the file is found in the destination False otherwise
+    Raises:
+        ExpectedFileIsAFolder custom exception if the file is found but it's a folder
+    """
+    glob_str: str = file_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
+    potential_matches = list(destination.glob(glob_str))
+    if len(potential_matches) > 0:
+        match_file: Path = potential_matches[0]
+        if match_file.is_file():
+            return True
+        else:
+            raise ExpectedFileIsAFolder(f"Expected {match_file.as_posix()} to be a file but it's a folder.")
+    return False
+
+
+class ExpectedFileIsAFolder(Exception):
+    pass
+
+
+def is_file_in_other_modified(file_to_check: Path, source: Path, destination: Path) -> bool:
     """Check if file_to_check is in destination folder and it's the same file.
     Given there is a file with the same name in the destination folder (same relative path)
     assume if modification times are the same the files are the same.
@@ -225,8 +303,10 @@ def is_file_in_other(file_to_check: Path, source: Path, destination: Path) -> bo
         destination (pathlib.Path): path of the destination folder
 
     Returns:
-        bool: True of the file in found in the destination at the same relative path and either
-        the modification times are the same or the md5 hash of the contents are the same. False otherwise
+        bool: False of the file is found in the destination at the same relative path and either
+        the modification times are the same or the md5 hash of the contents are the same. True otherwise
+    Raises:
+        FileNotFoundError if the file is not found in the destination folder
     """
     glob_str: str = file_to_check.as_posix().replace(source.as_posix(), "").lstrip("/")
     potential_matches = list(destination.glob(glob_str))
@@ -235,12 +315,14 @@ def is_file_in_other(file_to_check: Path, source: Path, destination: Path) -> bo
         destination_mdate: float = match_file.stat().st_mtime
         source_mdate: float = file_to_check.stat().st_mtime
         if source_mdate == destination_mdate:
-            return True
+            return False
         source_hash: str = compute_hash(file_to_check)
         destination_hash: str = compute_hash(match_file)
         if source_hash == destination_hash:
-            return True
-    return False
+            return False
+    else:
+        raise FileNotFoundError
+    return True
 
 
 def compute_hash(file_to_check: Path) -> str:
